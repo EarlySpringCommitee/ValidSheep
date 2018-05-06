@@ -1,0 +1,6 @@
+{
+    "jwtPassword": "test",
+    "jwtIss": "ValidSheep API Server",
+    "jwtExpirePeriod": 600,
+    "userFilesMenu": "./users/"
+}
