@@ -2,14 +2,16 @@ const sha256 = require('js-sha256').sha256;
 const fs = require('fs');
 const crypto = require('crypto')
 const jwt = require('jsonwebtoken');
+const jsonfile = require('jsonfile'); //讀 json 的咚咚
 const algorithm = 'aes-256-ctr'
 const userPath = x => userFilesMenu + x + '.usr'
 const base64 = data => Buffer.from(data).toString("base64")
 
-const jwtPassword = 'test'
-const jwtIss = 'ValidSheep API Server'
-const jwtExpirePeriod = 600
-const userFilesMenu = './users/'
+const config = jsonfile.readFileSync('./../config.json'); // 設定檔案
+const jwtPassword = config.jwtPassword||'test'
+const jwtIss = config.jwtIss||'ValidSheep API Server'
+const jwtExpirePeriod = config.jwtExpirePeriod||600
+const userFilesMenu = config.userFilesMenu||'./users/'
 
 class Auth {
     constructor(){
