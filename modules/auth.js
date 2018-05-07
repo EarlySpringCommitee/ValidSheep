@@ -15,17 +15,21 @@ const userFilesMenu = config.userFilesMenu||'./users/'
 
 class Auth {
     constructor(){
+        this.init()
+    }
+
+    init(){
         this.session = {}
         this.username = undefined;
         this.token = undefined;
     }
+
     register(username, password, cb){
         if (userExist(username)) throw new Error ("Username occupied.")
         encrypt(username, sha256(password), {
             'username': username,
             'servers': {}
-        }, cb)
-        this.login(username, sha256(password), ()=>{})
+        }, () => this.login(username, sha256(password), ()=>{}))
     }
 
     login(username, password, cb){
@@ -38,6 +42,13 @@ class Auth {
                 issuer: jwtIss,
                 subject: username})
             cb(data)
+        });
+    }
+
+    verify(cb){
+        jwt.verify(this.token, jwtPassword, {issuer:jwtIss}, function(err, decoded) {
+            if (err) throw err
+            cb(decoded.data)
         });
     }
 
@@ -61,9 +72,8 @@ class Auth {
     }
 
     logout(cb){
-        this.session = {}
-        this.username = undefined;
-        this.token = undefined;
+        this.init()
+        delete this
         cb()
     }
 
@@ -75,15 +85,7 @@ class Auth {
     }
 }
 
-function validate(token){
-    jwt.verify(token, jwtPassword, {issuer:jwtIss}, function(err, decoded) {
-        if (err) throw err
-        // console.log(decoded.data)
-    });
-}
-
 exports.Auth = Auth
-exports.validate = validate
 
 function checkFileExistsSync(filepath){
     let flag = true;
