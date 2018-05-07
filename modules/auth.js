@@ -46,8 +46,8 @@ class Auth {
     }
 
     verify(cb){
-        jwt.verify(this.token, jwtPassword, {issuer:jwtIss}, function(err, decoded) {
-            if (err) throw err
+        jwt.verify(this.token, jwtPassword, {issuer:jwtIss}, (err, decoded) => {
+            if (err) this.logout(() => {throw err})
             cb(decoded.data)
         });
     }
