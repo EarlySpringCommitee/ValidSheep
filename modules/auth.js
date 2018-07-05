@@ -1,137 +1,169 @@
 const sha256 = require('js-sha256').sha256;
 const fs = require('fs');
-const crypto = require('crypto')
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const jsonfile = require('jsonfile'); //讀 json 的咚咚
-const algorithm = 'aes-256-ctr'
-const userPath = x => userFilesMenu + x + '.usr'
-const base64 = data => Buffer.from(data).toString("base64")
+const jsonfile = require('jsonfile');
 
-const config = jsonfile.readFileSync('config.json'); // 設定檔案
-const jwtPassword = config.jwtPassword||'test'
-const jwtIss = config.jwtIss||'ValidSheep API Server'
-const jwtExpirePeriod = config.jwtExpirePeriod||600
-const userFilesMenu = config.userFilesMenu||'./users/'
+const algorithm = 'aes-256-ctr';
+const config = jsonfile.readFileSync('config.json');
+const jwtPassword = config.jwtPassword || 'test';
+const jwtIss = config.jwtIss || 'ValidSheep API Server';
+const jwtExpirePeriod = config.jwtExpirePeriod || 600;
+const userFilesDir = config.userFilesDir || './users/';
+
+const userPath = x => userFilesDir + x + '.usr';
+const base64 = data => Buffer.from(data).toString("base64");
+const checkFileExists = s => new Promise(r => fs.access(s, fs.F_OK, e => r(!e)))
+const isUserExist = username => checkFileExists(userPath(username))
 
 class Auth {
-    constructor(){
+    constructor() {
         this.init()
     }
 
-    init(){
+    init() {
         this.session = {}
         this.username = undefined;
         this.token = undefined;
     }
 
-    register(username, password, cb){
-        if (userExist(username)) throw new Error ("Username occupied.")
-        encrypt(username, sha256(password), {
-            'username': username,
-            'servers': {}
-        }, () => this.login(username, sha256(password), ()=>{}))
-    }
-
-    login(username, password, cb){
-        if (!userExist(username)) throw new Error ("User not exist.")
-        decrypt(username, password, data => {
-            let currentUnixTime = Math.floor(new Date() / 1000)
-            this.username = username
-            this.token = jwt.sign({"data": encryptText(JSON.stringify(data), password)}, jwtPassword, {
-                expiresIn: jwtExpirePeriod,
-                issuer: jwtIss,
-                subject: username})
-            cb(data)
-        });
-    }
-
-    verify(cb){
-        jwt.verify(this.token, jwtPassword, {issuer:jwtIss}, (err, decoded) => {
-            if (err) this.logout(() => {throw err})
-            cb(decoded.data)
-        });
-    }
-
-    changePassword(oldPassword, newPassword, cb){
-        decrypt(this.username, oldPassword, data => {
-            fs.unlink(userPath(this.username), err => {
-                if (err) throw err;
-                encrypt(this.username, newPassword, data, () => this.login(this.username, newPassword, cb))
-              });
-        });
-    }
-
-    modifyData(password, newServer, cb){
-        decrypt(this.username, password, data => {
-            fs.unlink(userPath(this.username), err => {
-                if (err) throw err;
-                data.servers = newServer
-                encrypt(this.username, password, data, () => this.login(this.username, password, cb))
+    register(username, password) {
+        return new Promise(async(resolve, reject) => {
+            if (await isUserExist(username)) reject(new Error("Username occupied."))
+            else {
+                encrypt(username, sha256(password), {
+                        'username': username,
+                        'servers': {}
+                    })
+                    .then(_ => this.login(username, sha256(password)))
+                    .then(data => resolve(data))
+                    .catch(err => reject(err))
+                    }
             })
-        })
     }
 
-    logout(cb){
+    login(username, password) {
+        return new Promise(async(resolve, reject) => {
+            if (!(await isUserExist(username))) reject(new Error("User not exist."))
+            else {
+                decrypt(username, password)
+                    .then(data => {
+                        this.username = username
+                        jwt.sign({ "data": encryptText(JSON.stringify(data), password) }, 
+                            jwtPassword, {
+                                expiresIn: jwtExpirePeriod,
+                                issuer: jwtIss,
+                                subject: username
+                            }, 
+                            (err, data) => {
+                                if (err) reject(err);
+                                else {
+                                    this.token = data;
+                                    resolve(data);
+                                }
+                            })
+                    })
+                    .catch(e => reject(e))
+                }
+            })
+    }
+
+    verify() {
+        return new Promise((resolve, reject) => {
+                jwt.verify(this.token, jwtPassword, { issuer: jwtIss }, (err, decoded) => {
+                    if (err) this.logout(() => reject(err))
+                    else resolve(decoded.data)
+                });
+            })
+    }
+
+    changePassword(oldPassword, newPassword) {
+        return new Promise((resolve, reject) => {
+                decrypt(this.username, oldPassword)
+                    .then(data => {
+                        fs.unlink(userPath(this.username), err => {
+                            if (err) reject(err);
+                            else {
+                                encrypt(this.username, newPassword, data)
+                                .then(_ => this.login(this.username, newPassword))
+                                .then(_ => resolve(true))
+                            }
+                        })
+                    })
+                    .catch(err => reject(err))
+            })
+    }
+
+    modifyData(password, newServer) {
+        return new Promise((resolve, reject) => {
+                fs.unlink(userPath(this.username), err => {
+                    if (err) reject(err);
+                    else {
+                        data.servers = newServer
+                        encrypt(this.username, password, data)
+                            .then(_ => this.login(this.username, password))
+                            .then(data => resolve(data))
+                            .catch(e => reject(e))
+                    }
+                })
+            })
+    }
+
+    logout(cb) {
         this.init()
         delete this
-        cb()
+        return cb()
     }
 
-    perish(cb){
-        fs.unlink(userPath(this.username), err => {
-            this.logout(cb)
+    perish(cb) {
+        return fs.unlink(userPath(this.username), err => {
             if (err) throw err;
+            return this.logout(cb)
         })
     }
 }
 
 exports.Auth = Auth
 
-function checkFileExistsSync(filepath){
-    let flag = true;
-    try{
-        fs.accessSync(filepath, fs.F_OK);
-    }catch(e){
-      flag = false;
-    }
-    return flag;
+function encrypt(username, password, data) {
+    return new Promise(async(resolve, reject) => {
+            let cipher = crypto.createCipher(algorithm, password);
+            let crypted = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(data))), cipher.final()]);
+            if (!(await checkFileExists(userFilesDir))) fs.mkdir(userFilesDir, 0777, err => {
+                if (err) reject(err);
+            })
+            fs.writeFile(userPath(username), crypted, "binary", err => {
+                if (err) reject(err);
+                else resolve(userPath(username));
+            })
+        })
 }
 
-function userExist(username) {
-    return checkFileExistsSync(userPath(username))
-}
-
-function encrypt(username, password, data, cb){
-    let cipher = crypto.createCipher(algorithm, password)
-    let crypted = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(data))), cipher.final()]);
-    if (!checkFileExistsSync(userFilesMenu)) fs.mkdirSync(userFilesMenu)
-    fs.writeFile(userPath(username), crypted, "binary", err => {
-        if (err) throw err
-        cb()
-    })
-}
-   
-function decrypt(username, password, cb){
-    let decipher = crypto.createDecipher(algorithm, password)
-    let dec = buffer => Buffer.concat([decipher.update(buffer), decipher.final()]).toString('utf8');
-    fs.readFile(userPath(username), (err, data) => {
-        if (err) throw err
-        try{
-            var decryptedData = JSON.parse(dec(data))
-        }
-        catch(e){
-            throw new Error("Password error.")
-        }
-        cb(decryptedData);
-    })
+function decrypt(username, password) {
+    return new Promise((resolve, reject) => {
+            let decipher = crypto.createDecipher(algorithm, password);
+            let dec = buffer => Buffer.concat([decipher.update(buffer), decipher.final()]).toString('utf8');
+            fs.readFile(userPath(username), (err, data) => {
+                if (err) reject(err);
+                else {
+                    try {
+                        var decryptedData = JSON.parse(dec(data))
+                        resolve(decryptedData);
+                    } catch (e) {
+                        reject(new Error("Password error."))
+                    }
+                }
+            })
+        })
 }
 
 // https://github.com/crypto-browserify/browserify-aes
 // https://lollyrock.com/articles/nodejs-encryption/
 
-function encryptText(text, password){
-    var cipher = crypto.createCipher(algorithm, password)
-    var crypted = cipher.update(text, 'utf8', 'hex')
+function encryptText(text, password) {
+    console.log(text)
+    let cipher = crypto.createCipher(algorithm, password)
+    let crypted = cipher.update(text, 'utf8', 'hex')
     crypted += cipher.final('hex');
     return crypted;
 }

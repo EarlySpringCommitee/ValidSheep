@@ -1,0 +1,9 @@
+{
+    "dependencies": {
+        "js-sha256": "^0.9.0",
+        "crypto": "*",
+        "jsonwebtoken": "^8.3.0",
+        "jsonfile": "^4.0.0",
+        "syno": "^2.1.0"
+    }
+}

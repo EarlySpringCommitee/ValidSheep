@@ -1,7 +1,7 @@
 const Syno = require('syno');
 
 class Dsm {
-    constructor(protocol, host, port, account, passwd, apiVersion){
+    constructor(protocol, host, port, account, passwd, apiVersion) {
         this._syno = new Syno({
             // Requests protocol : 'http' or 'https' (default: http)
             protocol: protocol,
@@ -17,11 +17,11 @@ class Dsm {
             apiVersion: apiVersion
         });
     }
-    tasks(){
+    tasks() {
         let tasks = {}
         this._syno.dl.listTasks(resp => resp.tasks.forEach(task => tasks[task.id] = task))
         return tasks
-        
+
         /*
         {
             "id": {
@@ -36,9 +36,9 @@ class Dsm {
         */
     }
 
-    getInfo(){
+    getInfo() {
         return this._syno.dl.getInfo()
-        
+
         /*
             {
                 "is_manager":true,
@@ -48,4 +48,3 @@ class Dsm {
         */
     }
 }
-
