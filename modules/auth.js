@@ -1,5 +1,4 @@
 const sha256 = require('js-sha256').sha256;
-const fs = require('fs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const jsonfile = require('jsonfile');
@@ -10,11 +9,10 @@ const jwtPassword = config.jwtPassword || 'test';
 const jwtIss = config.jwtIss || 'ValidSheep API Server';
 const jwtExpirePeriod = config.jwtExpirePeriod || 600;
 const userFilesDir = config.userFilesDir || './users/';
+const dbType = config.dbType || 'fs';
 
-const userPath = x => userFilesDir + x + '.usr';
 const base64 = data => Buffer.from(data).toString("base64");
-const checkFileExists = s => new Promise(r => fs.access(s, fs.F_OK, e => r(!e)))
-const isUserExist = username => checkFileExists(userPath(username))
+const db = require('./database/' + dbType + '.js').Database(userFilesDir)
 
 class Auth {
     constructor() {
@@ -29,7 +27,7 @@ class Auth {
 
     register(username, password) {
         return new Promise(async(resolve, reject) => {
-            if (await isUserExist(username)) reject(new Error("Username occupied."))
+            if (await db.isUserExist(username)) reject(new Error("Username occupied."))
             else {
                 encrypt(username, sha256(password), {
                         'username': username,
@@ -44,7 +42,7 @@ class Auth {
 
     login(username, password) {
         return new Promise(async(resolve, reject) => {
-            if (!(await isUserExist(username))) reject(new Error("User not exist."))
+            if (!(await db.isUserExist(username))) reject(new Error("User not exist."))
             else {
                 decrypt(username, password)
                     .then(data => {
@@ -70,55 +68,51 @@ class Auth {
 
     verify() {
         return new Promise((resolve, reject) => {
-                jwt.verify(this.token, jwtPassword, { issuer: jwtIss }, (err, decoded) => {
-                    if (err) this.logout(() => reject(err))
-                    else resolve(decoded.data)
-                });
-            })
+            jwt.verify(this.token, jwtPassword, { issuer: jwtIss }, (err, decoded) => {
+                if (err) this.logout().then(_ => reject(err)).catch(e => reject[e, err])
+                else resolve(decoded.data)
+            });
+        })
     }
 
     changePassword(oldPassword, newPassword) {
         return new Promise((resolve, reject) => {
-                decrypt(this.username, oldPassword)
-                    .then(data => {
-                        fs.unlink(userPath(this.username), err => {
-                            if (err) reject(err);
-                            else {
-                                encrypt(this.username, newPassword, data)
-                                .then(_ => this.login(this.username, newPassword))
-                                .then(_ => resolve(true))
-                            }
-                        })
-                    })
-                    .catch(err => reject(err))
+            decrypt(this.username, oldPassword)
+                .then(data => encrypt(this.username, newPassword, data))
+                .then(_ => this.login(this.username, newPassword))
+                .then(_ => resolve(true))
+                .catch(err => reject(err))
             })
     }
 
     modifyData(password, newServer) {
         return new Promise((resolve, reject) => {
-                fs.unlink(userPath(this.username), err => {
-                    if (err) reject(err);
-                    else {
-                        data.servers = newServer
-                        encrypt(this.username, password, data)
-                            .then(_ => this.login(this.username, password))
-                            .then(data => resolve(data))
-                            .catch(e => reject(e))
-                    }
-                })
+            decrypt(this.username, password)
+                .then(data => encrypt(this.username, password, {...data, ...{servers: newServer}}))
+                .then(_ => this.login(this.username, password))
+                .then(data => resolve(data))
+                .catch(e => reject(e))
             })
     }
 
-    logout(cb) {
-        this.init()
-        delete this
-        return cb()
+    logout() {
+        return new Promise((resolve, reject) => {
+            try {
+                this.init()
+                delete this
+                resolve(true)
+            } catch(e) {
+                reject(e)
+            }
+        })
     }
 
-    perish(cb) {
-        return fs.unlink(userPath(this.username), err => {
-            if (err) throw err;
-            return this.logout(cb)
+    perish() {
+        return new Promise((resolve, reject) => {
+            db.remove(this.username)
+                .then(() => this.logout())
+                .then(_ => resolve(true))
+                .catch(e => reject(e))
         })
     }
 }
@@ -127,33 +121,21 @@ exports.Auth = Auth
 
 function encrypt(username, password, data) {
     return new Promise(async(resolve, reject) => {
-            let cipher = crypto.createCipher(algorithm, password);
-            let crypted = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(data))), cipher.final()]);
-            if (!(await checkFileExists(userFilesDir))) fs.mkdir(userFilesDir, 0777, err => {
-                if (err) reject(err);
-            })
-            fs.writeFile(userPath(username), crypted, "binary", err => {
-                if (err) reject(err);
-                else resolve(userPath(username));
-            })
+        let cipher = crypto.createCipher(algorithm, password);
+        let crypted = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(data))), cipher.final()]);
+        db.write(username, crypted)
+            .then(() => resolve(true))
+            .catch(err => reject(err))
         })
 }
 
 function decrypt(username, password) {
     return new Promise((resolve, reject) => {
-            let decipher = crypto.createDecipher(algorithm, password);
-            let dec = buffer => Buffer.concat([decipher.update(buffer), decipher.final()]).toString('utf8');
-            fs.readFile(userPath(username), (err, data) => {
-                if (err) reject(err);
-                else {
-                    try {
-                        var decryptedData = JSON.parse(dec(data))
-                        resolve(decryptedData);
-                    } catch (e) {
-                        reject(new Error("Password error."))
-                    }
-                }
-            })
+        let decipher = crypto.createDecipher(algorithm, password);
+        let dec = buffer => Buffer.concat([decipher.update(buffer), decipher.final()]).toString('utf8');
+        db.read(username)
+            .then(data => resolve(JSON.parse(dec(data))))
+            .catch(_ => reject(new Error("Password error.")))
         })
 }
 
