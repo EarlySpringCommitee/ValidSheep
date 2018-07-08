@@ -10,6 +10,7 @@ const jwtIss = config.jwtIss || 'ValidSheep API Server';
 const jwtExpirePeriod = config.jwtExpirePeriod || 600;
 const userFilesDir = config.userFilesDir || './users/';
 const dbType = config.dbType || 'fs';
+const debug = config.debug || false;
 
 const base64 = data => Buffer.from(data).toString("base64");
 const db = require('./database/' + dbType + '.js').Database(userFilesDir)
@@ -59,11 +60,11 @@ class User {
         return new Promise(async(resolve, reject) => {
             if (await db.isUserExist(username)) reject(new UsernameOccupiedError(username))
             else {
-                encrypt(username, sha256(password), {
+                encrypt(username, debug ? password : sha256(password), {
                         'username': username,
                         'servers': {}
                     })
-                    .then(_ => this.login(username, sha256(password)))
+                    .then(_ => this.login(username, debug ? password : sha256(password)))
                     .then(resolve)
                     .catch(reject)
                     }
