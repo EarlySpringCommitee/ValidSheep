@@ -4,7 +4,6 @@ const jwtIss = config.jwtIss || 'ValidSheep API Server';
 const jwtExpirePeriod = config.jwtExpirePeriod || 600;
 const userFilesDir = config.userFilesDir || './users/';
 const dbType = config.dbType || 'fs';
-const debug = config.debug || false;
 
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -12,7 +11,8 @@ const jsonfile = require('jsonfile');
 const algorithm = 'aes-256-ctr';
 const hash = {
     sha256: require('js-sha256').sha256,
-    sha512: x => require('sha512')(x.toString()).toString('hex')
+    sha512: x => require('sha512')(x.toString()).toString('hex'),
+    debug: x => x
 }[config.hash || 'sha512']
 
 const base64 = data => Buffer.from(data).toString("base64");
@@ -63,11 +63,11 @@ class User {
         return new Promise(async(resolve, reject) => {
             if (await db.isUserExist(username)) reject(new UsernameOccupiedError(username))
             else {
-                encrypt(username, debug ? password : hash(password), {
+                encrypt(username, hash(password), {
                         'username': username,
                         'servers': {}
                     })
-                    .then(_ => this.login(username, debug ? password : hash(password)))
+                    .then(_ => this.login(username, hash(password)))
                     .then(resolve)
                     .catch(reject)
                     }
