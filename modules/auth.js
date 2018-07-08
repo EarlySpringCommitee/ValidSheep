@@ -14,35 +14,65 @@ const dbType = config.dbType || 'fs';
 const base64 = data => Buffer.from(data).toString("base64");
 const db = require('./database/' + dbType + '.js').Database(userFilesDir)
 
-class Auth {
+class CustomError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = this.constructor.name;
+    }
+  }
+
+class UsernameOccupiedError extends CustomError {
+    constructor(username) {
+      super("Username occupied.");
+      this.username = username;
+    }
+  }
+
+class UserNotFoundError extends CustomError {
+    constructor(username) {
+      super("User not exist.");
+      this.username = username;
+    }
+  }
+
+class PasswordError extends CustomError {
     constructor() {
-        this.init()
+      super("Password error.");
+    }
+  }
+
+class User {
+    constructor(username, password) {
+        this.init(username, password)
     }
 
-    init() {
+    init(username, password) {
         this.session = {}
-        this.username = undefined;
+        this.username = username;
         this.token = undefined;
+        if (typeof(username) != 'undefined') db.isUserExist(username)
+            .then(userExist => userExist ? this.login(username, password) : this.register(username, password))
+            .catch(console.error)
     }
 
     register(username, password) {
         return new Promise(async(resolve, reject) => {
-            if (await db.isUserExist(username)) reject(new Error("Username occupied."))
+            if (await db.isUserExist(username)) reject(new UsernameOccupiedError(username))
             else {
                 encrypt(username, sha256(password), {
                         'username': username,
                         'servers': {}
                     })
                     .then(_ => this.login(username, sha256(password)))
-                    .then(data => resolve(data))
-                    .catch(err => reject(err))
+                    .then(resolve)
+                    .catch(reject)
                     }
             })
     }
 
     login(username, password) {
         return new Promise(async(resolve, reject) => {
-            if (!(await db.isUserExist(username))) reject(new Error("User not exist."))
+            if (!(await db.isUserExist(username))) reject(new UserNotFoundError(username))
             else {
                 decrypt(username, password)
                     .then(data => {
@@ -61,12 +91,12 @@ class Auth {
                                 }
                             })
                     })
-                    .catch(e => reject(e))
+                    .catch(reject)
                 }
             })
     }
 
-    verify() {
+    getData() {
         return new Promise((resolve, reject) => {
             jwt.verify(this.token, jwtPassword, { issuer: jwtIss }, (err, decoded) => {
                 if (err) this.logout().then(_ => reject(err)).catch(e => reject[e, err])
@@ -81,7 +111,7 @@ class Auth {
                 .then(data => encrypt(this.username, newPassword, data))
                 .then(_ => this.login(this.username, newPassword))
                 .then(_ => resolve(true))
-                .catch(err => reject(err))
+                .catch(reject)
             })
     }
 
@@ -90,8 +120,8 @@ class Auth {
             decrypt(this.username, password)
                 .then(data => encrypt(this.username, password, {...data, ...{servers: newServer}}))
                 .then(_ => this.login(this.username, password))
-                .then(data => resolve(data))
-                .catch(e => reject(e))
+                .then(resolve)
+                .catch(reject)
             })
     }
 
@@ -112,12 +142,12 @@ class Auth {
             db.remove(this.username)
                 .then(() => this.logout())
                 .then(_ => resolve(true))
-                .catch(e => reject(e))
+                .catch(reject)
         })
     }
 }
 
-exports.Auth = Auth
+exports.User = User
 
 function encrypt(username, password, data) {
     return new Promise(async(resolve, reject) => {
@@ -125,7 +155,7 @@ function encrypt(username, password, data) {
         let crypted = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(data))), cipher.final()]);
         db.write(username, crypted)
             .then(() => resolve(true))
-            .catch(err => reject(err))
+            .catch(reject)
         })
 }
 
@@ -135,7 +165,7 @@ function decrypt(username, password) {
         let dec = buffer => Buffer.concat([decipher.update(buffer), decipher.final()]).toString('utf8');
         db.read(username)
             .then(data => resolve(JSON.parse(dec(data))))
-            .catch(_ => reject(new Error("Password error.")))
+            .catch(_ => reject(new PasswordError()))
         })
 }
 
@@ -143,7 +173,6 @@ function decrypt(username, password) {
 // https://lollyrock.com/articles/nodejs-encryption/
 
 function encryptText(text, password) {
-    console.log(text)
     let cipher = crypto.createCipher(algorithm, password)
     let crypted = cipher.update(text, 'utf8', 'hex')
     crypted += cipher.final('hex');
