@@ -1,9 +1,10 @@
 {
     "dependencies": {
+        "fs-extra": "^6.0.1",
         "js-sha256": "^0.9.0",
-        "jsonwebtoken": "^8.3.0",
         "jsonfile": "^4.0.0",
-        "syno": "^2.1.0",
-        "fs-extra": "^6.0.1"
+        "jsonwebtoken": "^8.3.0",
+        "sha512": "^0.0.1",
+        "syno": "^2.1.0"
     }
 }
